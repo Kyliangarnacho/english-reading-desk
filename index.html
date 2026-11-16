@@ -12,7 +12,8 @@
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./vendor/bootstrap.min.css">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=650f599d8091">
+  <link rel="stylesheet" href="./exams.css?v=2d4e703a34b5">
 </head>
 <body>
   <a class="skip-link" href="#main">跳到内容</a>
@@ -21,6 +22,7 @@
     <div class="side-section">我的学习空间</div>
     <nav id="desktop-nav" class="primary-nav">
       <a href="#home" data-nav="home"><img src="./vendor/icons/house.svg" alt="">阅读看板</a>
+      <a href="#exams" data-nav="exams"><img src="./vendor/icons/book-open.svg" alt="">试卷练习</a>
       <a href="#reading" data-nav="reading"><img src="./vendor/icons/book-open.svg" alt="">外刊阅读<span class="nav-count" id="article-count">1</span></a>
       <a href="#collection" data-nav="collection"><img src="./vendor/icons/layers.svg" alt="">个人积累</a>
       <a href="#saved" data-nav="saved"><img src="./vendor/icons/bookmark.svg" alt="">我的收藏<span class="nav-count" id="saved-count">0</span></a>
@@ -46,6 +48,7 @@
   </div>
   <nav class="mobile-nav" aria-label="手机主导航">
     <a href="#home" data-nav="home"><img src="./vendor/icons/house.svg" alt=""><span>看板</span></a>
+    <a href="#exams" data-nav="exams"><img src="./vendor/icons/book-open.svg" alt=""><span>试卷</span></a>
     <a href="#reading" data-nav="reading"><img src="./vendor/icons/book-open.svg" alt=""><span>阅读</span></a>
     <a href="#collection" data-nav="collection"><img src="./vendor/icons/layers.svg" alt=""><span>积累</span></a>
     <a href="#saved" data-nav="saved"><img src="./vendor/icons/bookmark.svg" alt=""><span>收藏</span></a>
@@ -62,7 +65,9 @@
     <p class="storage-note">字号、背景和收藏保存在当前浏览器，暂不跨设备同步。文章内容更新后，手机和电脑都能看到。</p>
   </dialog>
   <div class="toast-message" id="toast" role="status" aria-live="polite"></div>
-  <script src="./content.js"></script>
-  <script src="./app.js"></script>
+  <script src="./content.js?v=4268bc4461ab"></script>
+  <script src="./exams-content.js?v=037f208f74fb"></script>
+  <script src="./exams.js?v=df69f25b6a7a"></script>
+  <script src="./app.js?v=65df88ef9756"></script>
 </body>
 </html>

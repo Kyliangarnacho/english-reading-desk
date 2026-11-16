@@ -24,7 +24,7 @@
     const priority = data.sentences.filter(s => s.priority && s.status === 'sentence');
     const picks = priority.filter(s => s.text.length > 90).slice(0, 2);
     const latest = data.articles.at(-1);
-    setContent(`<div class="page-heading"><div class="eyebrow">YOUR READING DESK</div><h1>开始今天的阅读</h1><p>2027 考研英语一 · 原文阅读与个人积累</p></div><div class="home-grid"><div>${latest ? articleCard(latest) : '<div class="feature-story">新的阅读即将加入。</div>'}</div><section class="collection-summary" aria-label="个人积累统计"><h2>我的积累</h2><div class="stat-row"><b>${n.sentences}</b><span>个完整句</span></div><div class="stat-row"><b>${n.words}</b><span>个生词</span></div><div class="stat-row"><b>${n.phrases}</b><span>个短语与表达</span></div><a class="subtle-link" href="#collection">打开全部积累 ${icon('arrow-up-right')}</a></section></div><div class="section-top"><div><h2>先读懂这两句</h2><p>从你的重点摘句中开始</p></div><a class="text-link" href="#collection/sentences">全部句子 ${icon('arrow-right')}</a></div>${colorKey()}${picks.map(sentenceCard).join('')}<div class="home-footnote">${icon('info')}<span>每条保留原句与直译，颜色帮助你抓住主干。需要时再打开提示。</span></div>`);
+    setContent(`<div class="page-heading"><div class="eyebrow">YOUR READING DESK</div><h1>开始今天的阅读</h1><p>2027 考研英语一 · 原文阅读与个人积累</p></div><section class="exam-home-entry"><div><h2>做一份英语试卷</h2><p>真题与模拟题 · 原文、选项同屏 · 翻译按需查看</p></div><a class="btn-main" href="#exams">打开试卷 <span aria-hidden="true">→</span></a></section><div class="home-grid"><div>${latest ? articleCard(latest) : '<div class="feature-story">新的阅读即将加入。</div>'}</div><section class="collection-summary" aria-label="个人积累统计"><h2>我的积累</h2><div class="stat-row"><b>${n.sentences}</b><span>个完整句</span></div><div class="stat-row"><b>${n.words}</b><span>个生词</span></div><div class="stat-row"><b>${n.phrases}</b><span>个短语与表达</span></div><a class="subtle-link" href="#collection">打开全部积累 ${icon('arrow-up-right')}</a></section></div><div class="section-top"><div><h2>先读懂这两句</h2><p>从你的重点摘句中开始</p></div><a class="text-link" href="#collection/sentences">全部句子 ${icon('arrow-right')}</a></div>${colorKey()}${picks.map(sentenceCard).join('')}<div class="home-footnote">${icon('info')}<span>每条保留原句与直译，颜色帮助你抓住主干。需要时再打开提示。</span></div>`);
   }
   function reading() {
     const candidates = data.plan?.supplementarySources || [];
@@ -80,12 +80,14 @@
   function currentRoute() { const [page, id] = location.hash.replace(/^#/, '').split('/'); return {page: page || 'home', id}; }
   function route() {
     const {page, id} = currentRoute();
-    const nav = page === 'article' ? 'reading' : page;
+    const nav = page === 'article' ? 'reading' : page === 'exam' ? 'exams' : page;
+    if (page !== 'exam') { document.body.classList.remove('exam-active'); $('#main').classList.remove('exam-main'); }
     document.querySelectorAll('[data-nav]').forEach(a => { a.classList.toggle('active', a.dataset.nav === nav); if (a.dataset.nav === nav) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-    const title = {home:'阅读看板',reading:'外刊阅读',article:'外刊阅读',collection:'个人积累',saved:'我的收藏',about:'阅读说明'}[page] || '阅读看板';
+    const title = {home:'阅读看板',reading:'外刊阅读',article:'外刊阅读',collection:'个人积累',saved:'我的收藏',about:'阅读说明',exams:'试卷练习',exam:'试卷练习'}[page] || '阅读看板';
     $('#breadcrumb').textContent = '我的学习空间 / ' + title;
     document.title = title + ' · 英语自学2027';
-    if (page === 'article') article(id);
+    if (page === 'exams' || page === 'exam') window.EnglishExamDesk.render(page === 'exam' ? id : null);
+    else if (page === 'article') article(id);
     else if (page === 'reading') reading();
     else if (page === 'collection' || page === 'saved') { if (['sentences','words','phrases','articles'].includes(id)) state.kind = id; if (state.kind === 'articles' && page !== 'saved') state.kind = 'sentences'; collection(page === 'saved'); }
     else if (page === 'about') about();
@@ -126,7 +128,7 @@
   $('#settings-dialog').addEventListener('click', event => { if (event.target === $('#settings-dialog')) { const r = event.target.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) event.target.close(); } });
   $('#font-size').addEventListener('input', event => { state.font = Number(event.target.value); writeStore('font', state.font); applySettings(); });
   document.querySelectorAll('[data-theme-choice]').forEach(button => button.addEventListener('click', () => { state.theme = button.dataset.themeChoice; writeStore('theme', state.theme); applySettings(); }));
-  $('#refresh-button').addEventListener('click', async () => { const button = $('#refresh-button'); button.disabled = true; try { const response = await fetch('./data.json?check=' + Date.now(), {cache:'no-store'}); if (!response.ok) throw Error('network'); const next = await response.json(); if (!Array.isArray(next.sentences) || !Array.isArray(next.articles) || !Array.isArray(next.lexicon)) throw Error('schema'); const changed = data.version !== next.version; data = next; route(); toast(changed ? '已载入最新内容' : '当前已是最新内容'); } catch { toast(location.protocol === 'file:' ? '本地副本已打开；在线网址可检查新内容' : '暂时未能检查更新，当前内容仍可阅读'); } finally { button.disabled = false; } });
+  $('#refresh-button').addEventListener('click', async () => { const button = $('#refresh-button'); button.disabled = true; try { const response = await fetch('./data.json?check=' + Date.now(), {cache:'no-store'}); if (!response.ok) throw Error('network'); const next = await response.json(); if (!Array.isArray(next.sentences) || !Array.isArray(next.articles) || !Array.isArray(next.lexicon)) throw Error('schema'); const examsChanged = await window.EnglishExamDesk.refresh(); const changed = data.version !== next.version || examsChanged; data = next; route(); toast(changed ? '已载入最新内容' : '当前已是最新内容'); } catch { toast(location.protocol === 'file:' ? '本地副本已打开；在线网址可检查新内容' : '暂时未能检查更新，当前内容仍可阅读'); } finally { button.disabled = false; } });
   if (!data || !Array.isArray(data.sentences)) { setContent('<div class="empty-state"><h1>学习内容暂未载入</h1><p>请刷新页面，或重新打开阅读网址。</p></div>'); return; }
   applySettings(); route();
   if (location.protocol !== 'file:') fetch('./data.json?open=' + Date.now(), {cache:'no-store'}).then(r => r.ok ? r.json() : null).then(next => { if(next && next.version !== data.version && Array.isArray(next.sentences) && Array.isArray(next.lexicon) && Array.isArray(next.articles)){ data = next; route(); toast('已载入最新内容'); } }).catch(() => {});
