@@ -5,7 +5,7 @@
   const storageKey = id => 'english-desk-annotations-' + id;
   const kinds = ['词语','难句','错因'];
   const cache = new Map(), storageProblems = new Set(), unreadableStores = new Set();
-  let context = null, candidate = null, editor = null, listScope = 'section', selectionTimer, toastTimer;
+  let context = null, editor = null, listScope = 'section', toastTimer, spaceHighlightActive = false;
   const uid = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,12);
   const byExam = id => window.EXAM_DESK_DATA?.exams?.find(e => e.id === id);
   const bySection = (exam,id) => exam?.sections?.find(s => s.id === id);
@@ -83,7 +83,7 @@
               const mark = document.createElement('mark');
               mark.dataset.examAnnotation = active.map(r => r.id).join(',');
               mark.className = 'exam-annotation-mark' + (active.some(r => r.kind === '错因') ? ' is-reason' : active.some(r => r.kind === '难句') ? ' is-sentence' : '');
-              mark.title = active.map(r => r.note || r.kind).join('；'); mark.textContent = text.slice(left,right);
+              mark.textContent = text.slice(left,right);
               fragment.append(mark);
             }
           }
@@ -96,8 +96,7 @@
       [...paragraph.childNodes].forEach(walk);
     }
   }
-  function clearSelection() { window.getSelection()?.removeAllRanges(); hideToolbar(); }
-  function hideToolbar() { const toolbar = $('#exam-selection-toolbar'); if (toolbar) toolbar.hidden = true; candidate = null; }
+  function clearSelection() { window.getSelection()?.removeAllRanges(); }
   function paragraphFor(node) { return (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement)?.closest('.exam-english[data-paragraph-index]'); }
   function sourceOffset(paragraph,node,offset) {
     const range = document.createRange(); range.selectNodeContents(paragraph); range.setEnd(node,offset);
@@ -106,7 +105,7 @@
     return prefix.textContent.length;
   }
   function currentSelection(warn = false) {
-    if (!context || $('#exam-annotation-dialog')?.open) return null;
+    if (!context || document.querySelector('dialog[open]')) return null;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount !== 1) return null;
     const range = selection.getRangeAt(0), startP = paragraphFor(range.startContainer), endP = paragraphFor(range.endContainer);
@@ -119,28 +118,25 @@
     while (start < end && /\s/.test(paragraph.en[start])) start++;
     while (end > start && /\s/.test(paragraph.en[end-1])) end--;
     if (start === end || end-start > 100000) return null;
-    return {examId:context.exam.id,sectionId:context.section.id,paragraphIndex,start,end,quote:paragraph.en.slice(start,end),rect:range.getBoundingClientRect()};
+    return {examId:context.exam.id,sectionId:context.section.id,paragraphIndex,start,end,quote:paragraph.en.slice(start,end)};
   }
   function selectedHighlights(selected) {
     if(!context || !selected)return [];
     return records(context.exam).filter(r=>r.highlighted!==false&&r.sectionId===selected.sectionId&&r.paragraphIndex===selected.paragraphIndex&&r.start<selected.end&&r.end>selected.start&&anchoredCorrectly(context.exam,r));
   }
-  function updateToolbar(warn = false) {
-    const selected = currentSelection(warn);
-    if (!selected) { hideToolbar(); return; }
-    candidate = selected;
-    let toolbar = $('#exam-selection-toolbar');
-    if (!toolbar) {
-      toolbar = document.createElement('div'); toolbar.id = 'exam-selection-toolbar'; toolbar.className = 'exam-selection-toolbar'; toolbar.setAttribute('role','toolbar'); toolbar.setAttribute('aria-label','原文标注');
-      toolbar.innerHTML = '<button type="button" data-annotation-action="highlight">高亮</button><button type="button" data-annotation-action="selection-note">笔记 / 就地对照</button><button type="button" class="annotation-toolbar-close" data-annotation-action="dismiss-selection" aria-label="关闭标注工具">×</button>';
-      toolbar.addEventListener('mousedown',event => event.preventDefault()); document.body.append(toolbar);
+  function toggleHighlight(selection) {
+    const affected=selectedHighlights(selection),now=new Date().toISOString();
+    clearSelection();
+    if(affected.length){
+      for(const record of affected){record.highlighted=false;record.updatedAt=now;}
+      persist(context.exam);paint();return;
     }
-    const highlightButton=toolbar.querySelector('[data-annotation-action="highlight"]'),alreadyHighlighted=selectedHighlights(selected).length>0;
-    highlightButton.textContent=alreadyHighlighted?'取消高亮':'高亮';highlightButton.setAttribute('aria-pressed',String(alreadyHighlighted));
-    toolbar.hidden = false;
-    const width = toolbar.getBoundingClientRect().width;
-    toolbar.style.left = Math.max(10,Math.min(selected.rect.left,document.documentElement.clientWidth-width-10))+'px';
-    toolbar.style.top = Math.max(8,selected.rect.top-48)+'px';
+    const previous=records(context.exam).filter(r=>r.highlighted===false&&r.sectionId===selection.sectionId&&r.paragraphIndex===selection.paragraphIndex&&r.start===selection.start&&r.end===selection.end&&r.quote===selection.quote);
+    if(previous.length){
+      for(const record of previous){record.highlighted=true;record.updatedAt=now;}
+      persist(context.exam);paint();return;
+    }
+    insert(freshRecord(selection));
   }
   function freshRecord(selection,kind='词语',questionNumber=null) {
     const now = new Date().toISOString();
@@ -195,7 +191,7 @@
     if (!context) return;
     if (options.scope === 'all' || options.scope === 'section') listScope = options.scope;
     clearSelection(); const {exam,section} = context, list = scoped(listScope).slice().sort((a,b) => b.createdAt.localeCompare(a.createdAt));
-    dialog('我的词句与做题经验',`<div class="annotation-list-tools"><div class="annotation-scope" role="group" aria-label="标注范围"><button type="button" data-annotation-action="scope-section" aria-pressed="${listScope==='section'}">本篇 ${count(exam.id,section.id)}</button><button type="button" data-annotation-action="scope-all" aria-pressed="${listScope==='all'}">全卷 ${count(exam.id)}</button></div><div class="annotation-export-tools">${actionButton('export-md','导出 Markdown')}${actionButton('export-json','导出 JSON')}<label class="annotation-button annotation-import-label">导入标注<input id="annotation-import-file" type="file" accept="application/json,.json"></label></div></div><p class="annotation-list-caption">${listScope==='all' ? esc(exam.title)+' · 全部篇目' : esc(section.title)} · ${list.length} 条${storageProblems.has(exam.id) ? ' · 暂未写入浏览器，请导出备份' : ''}</p><div class="annotation-records">${list.length ? list.map(r => { const s = bySection(exam,r.sectionId), stale = !anchoredCorrectly(exam,r); return `<article class="annotation-record" data-annotation-record="${esc(r.id)}"><div class="annotation-record-top"><span class="annotation-kind-label">${esc(r.kind)}</span><span>${esc(s?.title || r.sectionId)}${r.paragraphIndex !== null ? ' · 第'+(r.paragraphIndex+1)+'段' : ''}${r.questionNumber ? ' · 第'+r.questionNumber+'题' : ''}</span><button type="button" class="annotation-record-edit" data-annotation-action="edit" data-annotation-id="${esc(r.id)}">编辑</button></div>${r.quote ? `<p class="annotation-quote" lang="en">${esc(r.quote)}</p>` : '<p class="annotation-question-context">第 '+r.questionNumber+' 题笔记</p>'}${r.note ? `<p class="annotation-record-note">${esc(r.note)}</p>` : '<p class="annotation-note-empty">已高亮，点击“编辑”补一句自己的理解。</p>'}${stale ? '<p class="annotation-warning">原文已更新，笔记保留，暂不自动高亮。</p>' : ''}</article>`; }).join('') : '<div class="annotation-empty">阅读时用鼠标选中一个词、短语或句子，<br>点击“高亮”或“笔记 / 就地对照”。<br><span>对答案时也可以点“记错因”，把这次的判断留下来。</span></div>'}</div>`,actionButton('close','回到做题',true),'annotation-list-dialog');
+    dialog('我的词句与做题经验',`<div class="annotation-list-tools"><div class="annotation-scope" role="group" aria-label="标注范围"><button type="button" data-annotation-action="scope-section" aria-pressed="${listScope==='section'}">本篇 ${count(exam.id,section.id)}</button><button type="button" data-annotation-action="scope-all" aria-pressed="${listScope==='all'}">全卷 ${count(exam.id)}</button></div><div class="annotation-export-tools">${actionButton('export-md','导出 Markdown')}${actionButton('export-json','导出 JSON')}<label class="annotation-button annotation-import-label">导入标注<input id="annotation-import-file" type="file" accept="application/json,.json"></label></div></div><p class="annotation-list-caption">${listScope==='all' ? esc(exam.title)+' · 全部篇目' : esc(section.title)} · ${list.length} 条${storageProblems.has(exam.id) ? ' · 暂未写入浏览器，请导出备份' : ''}</p><div class="annotation-records">${list.length ? list.map(r => { const s = bySection(exam,r.sectionId), stale = !anchoredCorrectly(exam,r); return `<article class="annotation-record" data-annotation-record="${esc(r.id)}"><div class="annotation-record-top"><span class="annotation-kind-label">${esc(r.kind)}</span><span>${esc(s?.title || r.sectionId)}${r.paragraphIndex !== null ? ' · 第'+(r.paragraphIndex+1)+'段' : ''}${r.questionNumber ? ' · 第'+r.questionNumber+'题' : ''}</span><button type="button" class="annotation-record-edit" data-annotation-action="edit" data-annotation-id="${esc(r.id)}">编辑</button></div>${r.quote ? `<p class="annotation-quote" lang="en">${esc(r.quote)}</p>` : '<p class="annotation-question-context">第 '+r.questionNumber+' 题笔记</p>'}${r.note ? `<p class="annotation-record-note">${esc(r.note)}</p>` : '<p class="annotation-note-empty">已高亮，点击“编辑”补一句自己的理解。</p>'}${stale ? '<p class="annotation-warning">原文已更新，笔记保留，暂不自动高亮。</p>' : ''}</article>`; }).join('') : '<div class="annotation-empty">阅读时用鼠标选中一个词、短语或句子，<br>按空格键高亮，再点击高亮文字记笔记。<br><span>对答案时也可以点“记错因”，把这次的判断留下来。</span></div>'}</div>`,actionButton('close','回到做题',true),'annotation-list-dialog');
   }
   function downloadable(scope) {
     if (!context) return null;
@@ -239,34 +235,37 @@
   function mount({exam,section,root}) {
     if (!exam || !section || !root?.querySelectorAll) return;
     const changed = context && (context.exam.id!==exam.id || context.section.id!==section.id);
-    if (changed) closeDialog(); hideToolbar();
+    if (changed) closeDialog();
     context={exam,section,root}; records(exam); paint();
   }
-  function unmount() { context=null;clearTimeout(selectionTimer);hideToolbar();closeDialog(); }
-  document.addEventListener('mouseup',event => {
-    if (event.target.closest('#exam-selection-toolbar, #exam-annotation-dialog')) return;
-    clearTimeout(selectionTimer);selectionTimer=setTimeout(()=>updateToolbar(true),0);
+  function unmount() { context=null;spaceHighlightActive=false;closeDialog(); }
+  const spaceKey = event => event.code === 'Space' || event.key === ' ';
+  const editingOrControl = target => target?.closest?.('input,textarea,select,button,a[href],summary,[role="button"],[role="textbox"],[contenteditable]:not([contenteditable="false"])');
+  document.addEventListener('keydown',event => {
+    if(!spaceKey(event))return;
+    if(spaceHighlightActive && event.repeat){event.preventDefault();return;}
+    if(event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.isComposing || editingOrControl(event.target) || document.querySelector('dialog[open]'))return;
+    const selection=currentSelection();
+    if(!selection)return;
+    event.preventDefault();spaceHighlightActive=true;toggleHighlight(selection);
   });
-  document.addEventListener('selectionchange',() => { clearTimeout(selectionTimer);selectionTimer=setTimeout(()=>updateToolbar(false),100); });
-  document.addEventListener('scroll',event => { if (event.target.closest?.('#exam-annotation-dialog')) return; hideToolbar(); },true);
-  window.addEventListener('resize',hideToolbar);
+  document.addEventListener('keyup',event => {
+    if(spaceKey(event) && spaceHighlightActive){event.preventDefault();spaceHighlightActive=false;}
+  });
+  window.addEventListener('blur',()=>{spaceHighlightActive=false;});
+  document.addEventListener('mouseup',event => {
+    // Edge's selection mini menu is browser UI. This narrow workaround follows
+    // Microsoft's guidance without clearing the selection or blocking copy.
+    if(event.button===0 && context?.root.contains(event.target) && paragraphFor(event.target) && currentSelection())event.preventDefault();
+  });
+  document.addEventListener('contextmenu',event => {
+    if(context?.root.contains(event.target) && paragraphFor(event.target) && currentSelection())event.preventDefault();
+  });
   document.addEventListener('click',event => {
     const control = event.target.closest('[data-annotation-action]');
     if (control) {
       const action = control.dataset.annotationAction; event.preventDefault();
       if (action === 'close') { closeDialog();return; }
-      if (action === 'dismiss-selection') { clearSelection();return; }
-      if (action === 'highlight' && candidate) {
-        const selection={...candidate},affected=selectedHighlights(selection),now=new Date().toISOString();clearSelection();
-        if(affected.length){
-          for(const record of affected){record.highlighted=false;record.updatedAt=now;}
-          persist(context.exam);paint();notify('已取消高亮，笔记仍保留。');return;
-        }
-        const previous=records(context.exam).filter(r=>r.highlighted===false&&r.sectionId===selection.sectionId&&r.paragraphIndex===selection.paragraphIndex&&r.start===selection.start&&r.end===selection.end&&r.quote===selection.quote);
-        if(previous.length){for(const record of previous){record.highlighted=true;record.updatedAt=now;}persist(context.exam);paint();notify('已重新高亮，原有笔记保留。');return;}
-        const saved=insert(freshRecord(selection));if(saved)notify('已高亮保存。点击高亮文字可补充笔记。');return;
-      }
-      if (action === 'selection-note' && candidate) { const record=freshRecord(candidate,candidate.quote.split(/\s+/).length>12 ? '难句' : '词语');openEditor(record,{expandContext:true});return; }
       if (!context) return;
       if (action === 'scope-section' || action === 'scope-all') { openList({scope:action==='scope-all' ? 'all' : 'section'});return; }
       if (action === 'export-md' || action === 'export-json') { download(action==='export-json' ? 'json' : 'md');return; }

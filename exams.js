@@ -27,7 +27,8 @@
     clean.flags = Array.isArray(raw.flags) ? [...new Set(raw.flags.map(Number))].filter(n => all.some(q => q.number === n)) : [];
     for (const name of ['revealedQuestions','seenQuestions']) clean[name] = Array.isArray(raw[name]) ? [...new Set(raw[name].map(Number))].filter(n => all.some(q => q.number === n)) : [];
     clean.seenQuestions = [...new Set([...clean.seenQuestions,...clean.revealedQuestions])];
-    clean.reviewedSections = Array.isArray(raw.reviewedSections) ? [...new Set(raw.reviewedSections)].filter(id => exam.sections.some(s => s.id === id)) : [];
+    // Section summaries require an explicit review in this page session, not stored history.
+    clean.reviewedSections = [];
     clean.sectionIndex = Math.max(0, Math.min(exam.sections.length - 1, Number.isInteger(raw.sectionIndex) ? raw.sectionIndex : 0));
     const pageCount = Math.ceil(exam.sections[clean.sectionIndex].questions.length / 5);
     clean.questionPage = Math.max(0, Math.min(pageCount - 1, Number.isInteger(raw.questionPage) ? raw.questionPage : 0));
@@ -60,6 +61,9 @@
     const all = questions(exam), choices = all.filter(q => q.type !== 'text');
     return {done:all.filter(q => answered(p,q)).length,total:all.length,choiceTotal:choices.length,correct:choices.filter(q => p.answers[q.number] === q.answer).length,score:choices.reduce((n,q) => n + (p.answers[q.number] === q.answer ? Number(q.points || 0) : 0),0),possible:choices.reduce((n,q) => n + Number(q.points || 0),0)};
   }
+  function clearSectionReview(p,sectionId) {
+    p.reviewedSections = p.reviewedSections.filter(id => id !== sectionId);
+  }
   function listing() {
     window.ExamAnnotations?.unmount();
     activeId = ''; document.body.classList.remove('exam-active'); $('#main').classList.remove('exam-main');
@@ -76,7 +80,7 @@
   }
   function articleHTML(section,p) {
     const image = typeof section.image === 'string' && /^(\.\/)?[\w\u3400-\u9fff/-]+\.(png|jpe?g|webp|svg)$/i.test(section.image) ? `<figure class="exam-prompt-image"><img src="${esc(section.image)}" alt="${esc(section.imageAlt || '试卷题目配图')}"></figure>` : '';
-    return `<div class="exam-panel-heading"><div><span class="exam-panel-kicker">PASSAGE</span><h2>${esc(section.title)}</h2></div><div class="exam-panel-tools"><button type="button" class="exam-tool" data-exam-action="annotations-list">标注 <span id="exam-annotation-count">0</span></button>${section.notes?.length ? '<button type="button" class="exam-tool" data-exam-action="notes">长难句</button>' : ''}<button type="button" class="exam-tool ${fullTranslation ? 'active' : ''}" data-exam-action="translation" aria-pressed="${fullTranslation}">${fullTranslation ? '收起全文翻译' : '全文翻译'}</button></div></div><div class="exam-article-scroll" tabindex="0" aria-label="${esc(section.title)}原文"><div class="exam-article-inner"><p class="exam-annotation-hint">选中不会的词句，即可标注、记笔记并就地对照。</p>${matchingSequence(section,p)}${section.directions ? (section.type === 'writing' ? `<p class="exam-directions" lang="en">${esc(section.directions)}</p>` : disclosure('directions','题目说明',`<p class="exam-directions" lang="en">${esc(section.directions)}</p>`,'exam-direction-disclosure')) : ''}${image}${(section.paragraphs || []).map((para,i) => `<section class="exam-paragraph"><span class="exam-paragraph-number">${String(i+1).padStart(2,'0')}</span><p class="exam-english" data-paragraph-index="${i}" data-section-id="${esc(section.id)}" lang="en">${bodyText(para.en,p)}</p>${para.zh ? disclosure('paragraph-'+i,'本段对照',`<p class="exam-paragraph-translation">${esc(para.zh)}</p>`,'exam-paragraph-disclosure') : ''}</section>`).join('')}${(section.notes || []).length ? disclosure('long-sentences','长难句 · ' + section.notes.length + ' 处',(section.notes || []).map((note,i) => `<section class="exam-sentence"><span class="exam-panel-kicker">${String(i+1).padStart(2,'0')}</span><p class="exam-english" lang="en">${esc(note.text)}</p><p class="exam-paragraph-translation">${esc(note.translation)}</p>${note.hint ? `<p class="exam-sentence-hint">${esc(note.hint)}</p>` : ''}</section>`).join(''),'exam-sentences') : ''}<div class="exam-end">END OF PASSAGE</div></div></div>`;
+    return `<div class="exam-panel-heading"><div><span class="exam-panel-kicker">PASSAGE</span><h2>${esc(section.title)}</h2></div><div class="exam-panel-tools"><button type="button" class="exam-tool" data-exam-action="annotations-list">标注 <span id="exam-annotation-count">0</span></button>${section.notes?.length ? '<button type="button" class="exam-tool" data-exam-action="notes">长难句</button>' : ''}<button type="button" class="exam-tool ${fullTranslation ? 'active' : ''}" data-exam-action="translation" aria-pressed="${fullTranslation}">${fullTranslation ? '收起全文翻译' : '全文翻译'}</button></div></div><div class="exam-article-scroll" tabindex="0" aria-label="${esc(section.title)}原文"><div class="exam-article-inner"><p class="exam-annotation-hint">选中文字后按空格高亮 / 取消；点击高亮可记笔记。</p>${matchingSequence(section,p)}${section.directions ? (section.type === 'writing' ? `<p class="exam-directions" lang="en">${esc(section.directions)}</p>` : disclosure('directions','题目说明',`<p class="exam-directions" lang="en">${esc(section.directions)}</p>`,'exam-direction-disclosure')) : ''}${image}${(section.paragraphs || []).map((para,i) => `<section class="exam-paragraph"><span class="exam-paragraph-number">${String(i+1).padStart(2,'0')}</span><p class="exam-english" data-paragraph-index="${i}" data-section-id="${esc(section.id)}" lang="en">${bodyText(para.en,p)}</p>${para.zh ? disclosure('paragraph-'+i,'本段对照',`<p class="exam-paragraph-translation">${esc(para.zh)}</p>`,'exam-paragraph-disclosure') : ''}</section>`).join('')}${(section.notes || []).length ? disclosure('long-sentences','长难句 · ' + section.notes.length + ' 处',(section.notes || []).map((note,i) => `<section class="exam-sentence"><span class="exam-panel-kicker">${String(i+1).padStart(2,'0')}</span><p class="exam-english" lang="en">${esc(note.text)}</p><p class="exam-paragraph-translation">${esc(note.translation)}</p>${note.hint ? `<p class="exam-sentence-hint">${esc(note.hint)}</p>` : ''}</section>`).join(''),'exam-sentences') : ''}<div class="exam-end">END OF PASSAGE</div></div></div>`;
   }
   function matchingSequence(section,p) {
     if (section.type !== 'matching' || !Array.isArray(section.sequence)) return '';
@@ -106,6 +110,7 @@
     return `<div class="exam-panel-heading"><div><span class="exam-panel-kicker">QUESTIONS</span><h2>${section.questions[0]?.number}–${section.questions.at(-1)?.number} 题</h2></div><div class="exam-check-tools"><span class="exam-panel-caption">${section.questions.filter(q => answered(p,q)).length} / ${section.questions.length} 已答</span><button type="button" class="exam-tool" data-exam-action="review-section">核对本篇</button><button type="button" class="exam-inline" data-exam-action="hide-section">收起答案</button></div></div><div class="exam-section-review-status" role="status" ${p.reviewedSections.includes(section.id) ? '' : 'hidden'}>${sectionReviewText(section,p)}</div><div class="exam-questions-scroll" tabindex="0" aria-label="本页题目">${list.map(q => questionHTML(q,p,section)).join('')}</div><div class="exam-question-pagination"><button type="button" class="exam-tool" data-exam-action="question-prev" ${p.questionPage === 0 ? 'disabled' : ''}>← 上页题目</button><span>${p.questionPage+1} / ${pages}</span><button type="button" class="exam-tool" data-exam-action="question-next" ${p.questionPage >= pages-1 ? 'disabled' : ''}>下页题目 →</button></div>`;
   }
   function sectionReviewText(section,p) {
+    if (!p.reviewedSections.includes(section.id)) return '';
     const objective = section.questions.filter(q => q.type !== 'text');
     if (!objective.length) return '本篇参考答案已开放，可在各题下方对照。';
     const done = objective.filter(q => answered(p,q)).length, correct = objective.filter(q => p.answers[q.number] === q.answer).length;
@@ -236,7 +241,10 @@
     if (action === 'question-note') window.ExamAnnotations?.openQuestionNote(Number(control.dataset.number));
     if (action === 'reveal-question') {
       const q=questions(exam).find(q=>q.number===Number(control.dataset.number));if(!q)return;
-      if(revealed(p,q))p.revealedQuestions=p.revealedQuestions.filter(n=>n!==q.number);
+      if(revealed(p,q)){
+        p.revealedQuestions=p.revealedQuestions.filter(n=>n!==q.number);
+        clearSectionReview(p,exam.sections.find(s=>s.questions.includes(q)).id);
+      }
       else {p.revealedQuestions.push(q.number);if(!p.seenQuestions.includes(q.number))p.seenQuestions.push(q.number);}
       save(exam);updateReview(exam,q,exam.sections.find(s=>s.questions.includes(q)));updateProgressUI(exam);
     }
@@ -245,7 +253,10 @@
       if(action==='review-section'){
         p.revealedQuestions=[...new Set([...p.revealedQuestions,...numbers])];p.seenQuestions=[...new Set([...p.seenQuestions,...numbers])];
         if(!p.reviewedSections.includes(section.id))p.reviewedSections.push(section.id);
-      } else p.revealedQuestions=p.revealedQuestions.filter(n=>!numbers.includes(n));
+      } else {
+        p.revealedQuestions=p.revealedQuestions.filter(n=>!numbers.includes(n));
+        clearSectionReview(p,section.id);
+      }
       save(exam);for(const q of section.questions)updateReview(exam,q,section);updateProgressUI(exam);
     }
     if (action === 'notes') {
@@ -266,7 +277,7 @@
       const s = stats(exam,p); modal('交卷并查看解析',`<p>已作答 <strong>${s.done} / ${s.total}</strong> 题${s.done < s.total ? '，还有 ' + (s.total-s.done) + ' 题未答' : ''}。</p><p>交卷后显示客观题成绩、正确答案和解析。翻译、作文提供参考答案，供你自行对照。</p>`,button('close-modal','继续做题') + button('confirm-submit','交卷批改',true));
     }
     if (action === 'confirm-submit') { p.submitted = true; p.revealedQuestions=questions(exam).map(q=>q.number);p.seenQuestions=[...new Set([...p.seenQuestions,...p.revealedQuestions])];save(exam); closeModal(); paper(exam,true); notify('已交卷，可以查看答案与解析。'); }
-    if (action === 'resume') { p.submitted = false; p.revealedQuestions=[];save(exam); paper(exam,true); notify('已回到作答模式，需要时可以逐题或逐篇核对。'); }
+    if (action === 'resume') { p.submitted = false; p.revealedQuestions=[];p.reviewedSections=[];save(exam); paper(exam,true); notify('已回到作答模式，需要时可以逐题或逐篇核对。'); }
     if (action === 'tools') modal('进度与备份',`<p>作答、标记和当前页会自动保存在此浏览器。导出的文件可以带到其他设备继续。</p><div class="exam-backup-buttons">${button('export','导出进度')}<label class="exam-tool exam-import-label">导入进度<input type="file" id="exam-import-file" accept="application/json,.json"></label></div><p class="exam-source-note">试卷：${esc(exam.source?.paper || '')}<br>答案参考：${esc(exam.source?.analysis || '')}${exam.source?.note ? '<br>' + esc(exam.source.note) : ''}</p>`,button('reset','重新做这份试卷') + button('close-modal','完成',true));
     if (action === 'export') exportProgress(exam);
     if (action === 'reset') modal('重新做这份试卷', '<p>本份试卷的答案、标记和交卷结果将被清空。建议先导出进度备份。</p>',button('export','先导出进度') + button('close-modal','取消') + button('confirm-reset','清空并重做',true));
@@ -281,7 +292,7 @@
       const number = Number(event.target.dataset.examAnswer), q = questions(exam).find(q => q.number === number);
       const options = q?.options || exam.sections.find(s => s.questions.includes(q))?.options || [];
       if (!options.some(o => o.key === event.target.value)) return;
-      p.answers[number] = event.target.value; save(exam); updateQuestionUI(exam,q); updateProgressUI(exam);
+      p.answers[number] = event.target.value; clearSectionReview(p,exam.sections.find(s=>s.questions.includes(q)).id); save(exam); updateQuestionUI(exam,q); updateProgressUI(exam);
     }
     if (event.target.id === 'exam-import-file') {
       const file = event.target.files[0]; if (!file) return;
@@ -296,8 +307,8 @@
     if (!event.target.matches('textarea[data-exam-answer]')) return;
     const exam = exams().find(e => e.id === activeId); if (!exam) return;
     const p = progress(exam); if (p.submitted) return;
-    const n = Number(event.target.dataset.examAnswer); p.answers[n] = event.target.value; save(exam);
-    const section = exam.sections[p.sectionIndex], count = $(`[data-word-count="${n}"]`); if (count) count.textContent = section.type === 'writing' ? wordCount(event.target.value) + ' words' : event.target.value.length + ' 字符';
+    const n = Number(event.target.dataset.examAnswer), section = exam.sections[p.sectionIndex]; p.answers[n] = event.target.value; clearSectionReview(p,section.id); save(exam);
+    const count = $(`[data-word-count="${n}"]`); if (count) count.textContent = section.type === 'writing' ? wordCount(event.target.value) + ' words' : event.target.value.length + ' 字符';
     updateProgressUI(exam);
   });
   document.addEventListener('exam-annotations-change',event=>{
