@@ -25,7 +25,7 @@
     const anchored = raw.paragraphIndex !== null;
     if (anchored && (!Number.isInteger(raw.paragraphIndex) || raw.paragraphIndex < 0 || !section.paragraphs[raw.paragraphIndex] || !Number.isInteger(raw.start) || !Number.isInteger(raw.end) || raw.start < 0 || raw.end <= raw.start || raw.end - raw.start !== raw.quote.length)) throw Error('标注的原文位置不正确。');
     if (!anchored && (qn === null || raw.start !== null || raw.end !== null || raw.quote !== '')) throw Error('题目笔记格式不正确。');
-    return {id:raw.id,examId:exam.id,sectionId:section.id,paragraphIndex:anchored ? raw.paragraphIndex : null,start:anchored ? raw.start : null,end:anchored ? raw.end : null,quote:raw.quote,note:raw.note,kind:raw.kind,questionNumber:qn,createdAt:typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),updatedAt:typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString()};
+    return {id:raw.id,examId:exam.id,sectionId:section.id,paragraphIndex:anchored ? raw.paragraphIndex : null,start:anchored ? raw.start : null,end:anchored ? raw.end : null,quote:raw.quote,note:raw.note,kind:raw.kind,questionNumber:qn,highlighted:raw.highlighted!==false,createdAt:typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),updatedAt:typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString()};
   }
   const anchoredCorrectly = (exam,record) => record.paragraphIndex === null || sourceParagraph(exam,record)?.en?.slice(record.start,record.end) === record.quote;
   function records(exam) {
@@ -65,7 +65,7 @@
       const index = Number(paragraph.dataset.paragraphIndex), source = section.paragraphs[index];
       if (!source) continue;
       unwrap(paragraph);
-      const marks = records(exam).filter(r => r.sectionId === section.id && r.paragraphIndex === index && anchoredCorrectly(exam,r));
+      const marks = records(exam).filter(r => r.highlighted!==false && r.sectionId === section.id && r.paragraphIndex === index && anchoredCorrectly(exam,r));
       if (!marks.length) continue;
       let offset = 0;
       const walk = node => {
@@ -120,6 +120,10 @@
     if (start === end || end-start > 100000) return null;
     return {examId:context.exam.id,sectionId:context.section.id,paragraphIndex,start,end,quote:paragraph.en.slice(start,end),rect:range.getBoundingClientRect()};
   }
+  function selectedHighlights(selected) {
+    if(!context || !selected)return [];
+    return records(context.exam).filter(r=>r.highlighted!==false&&r.sectionId===selected.sectionId&&r.paragraphIndex===selected.paragraphIndex&&r.start<selected.end&&r.end>selected.start&&anchoredCorrectly(context.exam,r));
+  }
   function updateToolbar(warn = false) {
     const selected = currentSelection(warn);
     if (!selected) { hideToolbar(); return; }
@@ -130,6 +134,8 @@
       toolbar.innerHTML = '<button type="button" data-annotation-action="highlight">高亮</button><button type="button" data-annotation-action="selection-note">笔记 / 就地对照</button><button type="button" class="annotation-toolbar-close" data-annotation-action="dismiss-selection" aria-label="关闭标注工具">×</button>';
       toolbar.addEventListener('mousedown',event => event.preventDefault()); document.body.append(toolbar);
     }
+    const highlightButton=toolbar.querySelector('[data-annotation-action="highlight"]'),alreadyHighlighted=selectedHighlights(selected).length>0;
+    highlightButton.textContent=alreadyHighlighted?'取消高亮':'高亮';highlightButton.setAttribute('aria-pressed',String(alreadyHighlighted));
     toolbar.hidden = false;
     const width = toolbar.getBoundingClientRect().width;
     toolbar.style.left = Math.max(10,Math.min(selected.rect.left,document.documentElement.clientWidth-width-10))+'px';
@@ -250,7 +256,14 @@
       if (action === 'close') { closeDialog();return; }
       if (action === 'dismiss-selection') { clearSelection();return; }
       if (action === 'highlight' && candidate) {
-        const record=freshRecord(candidate);clearSelection();const saved=insert(record);if(saved)notify('已高亮保存。点击高亮文字可补充笔记。');return;
+        const selection={...candidate},affected=selectedHighlights(selection),now=new Date().toISOString();clearSelection();
+        if(affected.length){
+          for(const record of affected){record.highlighted=false;record.updatedAt=now;}
+          persist(context.exam);paint();notify('已取消高亮，笔记仍保留。');return;
+        }
+        const previous=records(context.exam).filter(r=>r.highlighted===false&&r.sectionId===selection.sectionId&&r.paragraphIndex===selection.paragraphIndex&&r.start===selection.start&&r.end===selection.end&&r.quote===selection.quote);
+        if(previous.length){for(const record of previous){record.highlighted=true;record.updatedAt=now;}persist(context.exam);paint();notify('已重新高亮，原有笔记保留。');return;}
+        const saved=insert(freshRecord(selection));if(saved)notify('已高亮保存。点击高亮文字可补充笔记。');return;
       }
       if (action === 'selection-note' && candidate) { const record=freshRecord(candidate,candidate.quote.split(/\s+/).length>12 ? '难句' : '词语');openEditor(record,{expandContext:true});return; }
       if (!context) return;
