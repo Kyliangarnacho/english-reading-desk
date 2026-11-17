@@ -11,6 +11,7 @@
   const bySection = (exam,id) => exam?.sections?.find(s => s.id === id);
   const sectionQuestions = section => section?.questions || [];
   const sourceParagraph = (exam,record) => bySection(exam,record.sectionId)?.paragraphs?.[record.paragraphIndex];
+  const visibleRecord = record => record.highlighted !== false;
   function notify(message) {
     const node = $('#toast'); if (!node) return;
     node.textContent = message; node.classList.add('visible'); clearTimeout(toastTimer);
@@ -50,8 +51,8 @@
       localStorage.setItem(storageKey(exam.id),JSON.stringify({schemaVersion:1,examId:exam.id,annotations:records(exam)}));
       storageProblems.delete(exam.id); saved = true;
     } catch { storageProblems.add(exam.id); notify('标注暂未写入浏览器，请通过“导出标注”备份本次笔记。'); }
-    const total = records(exam).length, sectionId = context?.section.id;
-    document.dispatchEvent(new CustomEvent('exam-annotations-change',{detail:{examId:exam.id,sectionId,count:records(exam).filter(r => r.sectionId === sectionId).length,total,saved}}));
+    const total = count(exam.id), sectionId = context?.section.id;
+    document.dispatchEvent(new CustomEvent('exam-annotations-change',{detail:{examId:exam.id,sectionId,count:count(exam.id,sectionId),total,saved}}));
     return saved;
   }
   function unwrap(paragraph) {
@@ -187,9 +188,9 @@
     node.querySelector('#annotation-note')?.focus({preventScroll:true});
   }
   function count(examId=context?.exam.id,sectionId) {
-    const exam = byExam(examId); return records(exam).filter(r => sectionId == null || r.sectionId === sectionId).length;
+    const exam = byExam(examId); return records(exam).filter(r => visibleRecord(r) && (sectionId == null || r.sectionId === sectionId)).length;
   }
-  const scoped = scope => context ? records(context.exam).filter(r => scope==='all' || r.sectionId === context.section.id) : [];
+  const scoped = scope => context ? records(context.exam).filter(r => visibleRecord(r) && (scope==='all' || r.sectionId === context.section.id)) : [];
   function openList(options={}) {
     if (!context) return;
     if (options.scope === 'all' || options.scope === 'section') listScope = options.scope;
@@ -233,7 +234,7 @@
       record = freshRecord({examId:context.exam.id,sectionId:section.id,paragraphIndex:e.paragraphIndex,start,end:start+e.text.length,quote:e.text},'错因',number);
     } else record = freshRecord({examId:context.exam.id,sectionId:section.id,paragraphIndex:null,start:null,end:null,quote:''},'错因',number);
     const existing = records(context.exam).find(r => r.sectionId === section.id && r.questionNumber === number && r.kind === '错因');
-    openEditor(existing || record,{expandContext:true});
+    openEditor(existing ? {...existing,highlighted:true} : record,{expandContext:true});
   }
   function mount({exam,section,root}) {
     if (!exam || !section || !root?.querySelectorAll) return;
